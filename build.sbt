@@ -268,6 +268,7 @@ lazy val spark: Project = project
     crossScalaVersions := Seq("2.11.12"),
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-core" % sparkVersion % "provided",
+      "org.apache.spark" %% "spark-sql" % sparkVersion % "provided",
       "org.scalatest" %% "scalatest" % scalatestVersion % "test"
     )
   )

@@ -18,8 +18,11 @@
 package com.spotify.featran
 
 import org.apache.spark.rdd.{RDD, RDDUtil}
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+import org.apache.spark.sql.{Dataset, Encoder}
 
 import scala.reflect.ClassTag
+import scala.reflect.runtime.universe.{TypeTag, typeTag}
 
 package object spark {
 
@@ -39,6 +42,55 @@ package object spark {
     }
 
     override def pure[A, B: ClassTag](ma: RDD[A])(b: B): RDD[B] = ma.context.parallelize(Seq(b))
+  }
+
+  /**
+    * [[CollectionType]] for extraction from Apache Spark `Dataset` type.
+    */
+  implicit object SparkDatasetType extends CollectionType[Dataset] {
+
+    override def map[A, B: ClassTag](ma: Dataset[A])(f: A => B): Dataset[B] = {
+      implicit lazy val ttB: TypeTag[B] = typeTag[B]
+      mapOp(ma, f)
+    }
+
+    def mapOp[A, B: TypeTag](ma: Dataset[A], f: A => B): Dataset[B] = {
+      implicit val encoderB: Encoder[B] = ExpressionEncoder[B]()
+      ma.map(f)
+    }
+
+    override def reduce[A](ma: Dataset[A])(f: (A, A) => A): Dataset[A] = {
+      implicit lazy val ttA: TypeTag[A] = typeTag[A]
+      reduceOp(ma, f)
+    }
+
+    def reduceOp[A: TypeTag](ma: Dataset[A], f: (A, A) => A): Dataset[A] = {
+      implicit val encoderA: Encoder[A] = ExpressionEncoder[A]()
+      val reduced = ma.reduce(f)
+      ma.sparkSession.createDataset(Seq(reduced))
+    }
+
+    override def cross[A, B: ClassTag](ma: Dataset[A])(mb: Dataset[B]): Dataset[(A, B)] = {
+      implicit lazy val ttA: TypeTag[A] = typeTag[A]
+      implicit lazy val ttB: TypeTag[B] = typeTag[B]
+      crossOp(ma, mb)
+    }
+
+    def crossOp[A: TypeTag, B: TypeTag](ma: Dataset[A], mb: Dataset[B]): Dataset[(A, B)] = {
+      implicit val encoderAB: Encoder[(A, B)] = ExpressionEncoder[(A, B)]()
+      val b = mb.head()
+      ma.map((_, b))
+    }
+
+    override def pure[A, B: ClassTag](ma: Dataset[A])(b: B): Dataset[B] = {
+      implicit lazy val ttB: TypeTag[B] = typeTag[B]
+      pureOp(ma, b)
+    }
+
+    def pureOp[A, B: TypeTag](ma: Dataset[A], b: B): Dataset[B] = {
+      implicit val encoderB: Encoder[B] = ExpressionEncoder[B]()
+      ma.sparkSession.createDataset(Seq(b))
+    }
   }
 
 }
